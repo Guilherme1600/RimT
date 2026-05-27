@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>RimT - Multithreaded Performance</name>
+  <author>RimT</author>
+  <packageId>RimT.MultithreadedPerformance</packageId>
+  <description>
+RimT - Multithreaded Performance Optimizer for RimWorld 1.6
+
+Offloads the most expensive game systems to background threads:
+- Pawn needs (hunger, rest, joy, etc.)
+- Health condition checks
+- Pawn relationships recalculation
+- Job queue thinking (non-critical)
+- Hauling opportunity scanning
+- Pathfinding cache warming
+
+Designed to improve TPS/FPS with 200-500+ pawns.
+Safe, conservative threading - never modifies game state from background threads.
+All results are applied synchronously on the main thread via a queue.
+
+Compatible with RimWorld 1.6.
+  </description>
+  <supportedVersions>
+    <li>1.6</li>
+  </supportedVersions>
+  <modDependencies />
+  <incompatibleWith />
+</ModMetaData>

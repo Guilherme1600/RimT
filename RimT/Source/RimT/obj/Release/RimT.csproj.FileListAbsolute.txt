@@ -1,0 +1,7 @@
+C:\Users\Guilherme Antonio\Desktop\RimT\Source\RimT\obj\Release\RimT.csproj.AssemblyReference.cache
+C:\Users\Guilherme Antonio\Desktop\RimT\Source\RimT\obj\Release\RimT.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Guilherme Antonio\Desktop\RimT\Source\RimT\obj\Release\RimT.AssemblyInfoInputs.cache
+C:\Users\Guilherme Antonio\Desktop\RimT\Source\RimT\obj\Release\RimT.AssemblyInfo.cs
+C:\Users\Guilherme Antonio\Desktop\RimT\Source\RimT\obj\Release\RimT.csproj.CoreCompileInputs.cache
+C:\Users\Guilherme Antonio\Desktop\RimT\Assemblies\RimT.dll
+C:\Users\Guilherme Antonio\Desktop\RimT\Source\RimT\obj\Release\RimT.dll

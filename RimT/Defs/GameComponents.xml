@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GameComponents em RimWorld registam-se via código, não via Def.
+     Este ficheiro existe apenas para referência futura.
+     O RimTPerformanceMonitor é injetado diretamente no RimTMod.cs -->
+<Defs>
+</Defs>
