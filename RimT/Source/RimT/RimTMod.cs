@@ -1,7 +1,4 @@
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Threading;
 using HarmonyLib;
 using RimWorld;
 using UnityEngine;
@@ -9,16 +6,10 @@ using Verse;
 
 namespace RimT
 {
-    /// <summary>
-    /// RimT entry point. Boots Harmony patches and the worker thread pool.
-    /// Also injects the GameComponent manually since GameComponentDef doesn't exist.
-    /// </summary>
     [StaticConstructorOnStartup]
     public static class RimTMod
     {
-        public static readonly string ID = "RimT";
         public static RimTSettings Settings { get; private set; }
-
         private static readonly Harmony Harmony = new Harmony("rimT.multithreaded");
 
         static RimTMod()
@@ -31,122 +22,72 @@ namespace RimT
                 ThreadCoordinator.Initialize(Settings.WorkerThreadCount);
                 MainThreadDispatcher.Initialize();
 
-                // Patch each class individually so one failure doesn't kill all patches
                 SafePatch(typeof(Patch_Game_UpdatePlay));
-                SafePatch(typeof(Patch_PathFinder_FindPath));
-                SafePatch(typeof(Patch_Reachability_CanReach));
-                SafePatch(typeof(Patch_ListerThings_ThingsMatching));
-                SafePatch(typeof(Patch_HaulGeneral_JobOnThing));
-                SafePatch(typeof(Patch_StatExtension_GetStatValue));
-                SafePatch(typeof(Patch_JobTracker_DetermineNextJob));
-                SafePatch(typeof(Patch_MapPawns_Sync));
-                SafePatch(typeof(Patch_ApparelTracker_Changed));
-                SafePatch(typeof(Patch_MentalStateHandler_Tick));
-                SafePatch(typeof(Patch_SkillsTracker_Tick));
+                SafePatch(typeof(Patch_Pawn_TickInterval));
+                SafePatch(typeof(Patch_JobGiver_Work));
+                SafePatch(typeof(Patch_MindState_TickInterval));
+                SafePatch(typeof(Patch_MentalBreaker_TickInterval));
                 SafePatch(typeof(Patch_NeedsTracker_Tick));
+                SafePatch(typeof(Patch_RelationsTracker_Tick));
 
-                Log.Message($"[RimT] Iniciado com {Settings.WorkerThreadCount} worker threads.");
+                Log.Message($"[RimT] Iniciado — {Settings.WorkerThreadCount} threads, {Environment.ProcessorCount} CPUs.");
             }
             catch (Exception ex)
             {
-                Log.Error($"[RimT] Falha ao iniciar: {ex}");
+                Log.Error($"[RimT] Falha: {ex}");
             }
         }
 
         private static void SafePatch(Type patchClass)
         {
-            try
-            {
-                var processor = new PatchClassProcessor(Harmony, patchClass);
-                processor.Patch();
-            }
+            try { new PatchClassProcessor(Harmony, patchClass).Patch(); }
             catch (Exception ex)
             {
-                // Log warning but continue — other patches still work
                 Log.Warning($"[RimT] Patch ignorado ({patchClass.Name}): {ex.Message}");
             }
         }
 
-        /// <summary>Called by Patch_Game_UpdatePlay to inject GameComponent once the game is loaded.</summary>
         public static void TryInjectGameComponent(Game game)
         {
-            if (game == null) return;
-            if (game.components == null) return;
-            // Only inject once
+            if (game?.components == null) return;
             if (game.components.Any(c => c is RimTPerformanceMonitor)) return;
-            try
-            {
-                var monitor = new RimTPerformanceMonitor(game);
-                game.components.Add(monitor);
-                if (Settings?.DebugLog == true)
-                    Log.Message("[RimT] PerformanceMonitor injetado.");
-            }
-            catch (Exception ex)
-            {
-                Log.Warning($"[RimT] Não foi possível injetar PerformanceMonitor: {ex.Message}");
-            }
+            try { game.components.Add(new RimTPerformanceMonitor(game)); }
+            catch { }
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // Mod class for settings window
-    // ══════════════════════════════════════════════════════════════════════════
     public class RimTModDef : Mod
     {
         private RimTSettings _settings;
-
         public RimTModDef(ModContentPack content) : base(content)
-        {
-            _settings = GetSettings<RimTSettings>();
-        }
-
+            => _settings = GetSettings<RimTSettings>();
         public override void DoSettingsWindowContents(Rect inRect)
-        {
-            _settings.DoWindowContents(inRect);
-        }
-
+            => _settings.DoWindowContents(inRect);
         public override string SettingsCategory() => "RimT Performance";
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    // Settings
-    // ══════════════════════════════════════════════════════════════════════════
     public class RimTSettings : ModSettings
     {
-        public int  WorkerThreadCount      = Mathf.Clamp(Environment.ProcessorCount - 2, 2, 14);
-        public bool OffloadNeeds           = true;
-        public bool OffloadHealth          = true;
-        public bool OffloadRelations       = true;
-        public bool OffloadHauling         = true;
-        public bool OffloadPathfindingWarm = true;
-        public bool DebugLog               = false;
+        public int  WorkerThreadCount = Mathf.Clamp(Environment.ProcessorCount - 2, 2, 14);
+        public bool DebugLog          = false;
 
         public void DoWindowContents(Rect inRect)
         {
             var list = new Listing_Standard();
             list.Begin(inRect);
-            list.Label($"Worker threads: {WorkerThreadCount}  (CPUs lógicos: {Environment.ProcessorCount})");
+            list.Label($"Worker threads: {WorkerThreadCount}   (CPUs: {Environment.ProcessorCount})");
+            list.Label("Ideal: CPUs - 1. Testa e ve o que da mais TPS.");
             WorkerThreadCount = (int)list.Slider(WorkerThreadCount, 1, Math.Max(1, Environment.ProcessorCount - 1));
-            list.CheckboxLabeled("Offload needs (fome/descanso/alegria)", ref OffloadNeeds);
-            list.CheckboxLabeled("Offload health checks",                  ref OffloadHealth);
-            list.CheckboxLabeled("Offload relationship recalc",            ref OffloadRelations);
-            list.CheckboxLabeled("Offload hauling scan cache",             ref OffloadHauling);
-            list.CheckboxLabeled("Warm pathfinding cache",                 ref OffloadPathfindingWarm);
-            list.Gap();
-            list.CheckboxLabeled("[Debug] Log verbose", ref DebugLog);
+            list.Gap(8f);
+            list.CheckboxLabeled("[Debug] Mostrar metodos encontrados no log", ref DebugLog);
             list.End();
         }
 
         public override void ExposeData()
         {
-            Scribe_Values.Look(ref WorkerThreadCount,      "workerThreadCount",
+            Scribe_Values.Look(ref WorkerThreadCount, "workerThreadCount",
                 Mathf.Clamp(Environment.ProcessorCount - 2, 2, 14));
-            Scribe_Values.Look(ref OffloadNeeds,           "offloadNeeds",           true);
-            Scribe_Values.Look(ref OffloadHealth,          "offloadHealth",          true);
-            Scribe_Values.Look(ref OffloadRelations,       "offloadRelations",       true);
-            Scribe_Values.Look(ref OffloadHauling,         "offloadHauling",         true);
-            Scribe_Values.Look(ref OffloadPathfindingWarm, "offloadPathfindingWarm", true);
-            Scribe_Values.Look(ref DebugLog,               "debugLog",               false);
+            Scribe_Values.Look(ref DebugLog, "debugLog", false);
         }
     }
 }
