@@ -1,2 +1,3 @@
 # RimT
-another multi thread optimizer
+another multi thread optimizer, more cores more TPS
+done with AI
