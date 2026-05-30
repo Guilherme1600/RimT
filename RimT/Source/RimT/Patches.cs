@@ -89,7 +89,9 @@ namespace RimT
                 var pawn = _pawnField?.GetValue(__instance) as Pawn;
                 if (pawn == null || pawn.Dead || !pawn.Spawned) return true;
                 if (pawn.IsColonist) return true;
-                return Find.TickManager.TicksGame % 3 == pawn.thingIDNumber % 3;
+                // Só throttle animais selvagens — visitantes e inimigos correm sempre
+                if (!pawn.RaceProps.Animal) return true;
+                return Find.TickManager.TicksGame % 2 == pawn.thingIDNumber % 2;
             }
             catch { return true; }
         }
@@ -112,7 +114,9 @@ namespace RimT
                 var pawn = _pawnField?.GetValue(__instance) as Pawn;
                 if (pawn == null || pawn.IsColonist) return true;
                 if (pawn.InMentalState) return true;
-                return Find.TickManager.TicksGame % 3 == pawn.thingIDNumber % 3;
+                // Só throttle animais — visitantes e inimigos correm sempre
+                if (!pawn.RaceProps.Animal) return true;
+                return Find.TickManager.TicksGame % 2 == pawn.thingIDNumber % 2;
             }
             catch { return true; }
         }
@@ -145,7 +149,7 @@ namespace RimT
             {
                 var pawn = _pawnField?.GetValue(__instance) as Pawn;
                 if (pawn == null || pawn.IsColonist) return true;
-                return Find.TickManager.TicksGame % 5 == pawn.thingIDNumber % 5;
+                return Find.TickManager.TicksGame % 3 == pawn.thingIDNumber % 3;
             }
             catch { return true; }
         }
@@ -169,14 +173,16 @@ namespace RimT
                 if (pawn == null || pawn.Dead) return true;
                 if (pawn.IsColonist || pawn.IsPrisonerOfColony) return true;
                 if (pawn.health?.summaryHealth?.SummaryHealthPercent < 0.5f) return true;
-                return Find.TickManager.TicksGame % 3 == pawn.thingIDNumber % 3;
+                // Só throttle animais — visitantes e inimigos correm sempre
+                if (!pawn.RaceProps.Animal) return true;
+                return Find.TickManager.TicksGame % 2 == pawn.thingIDNumber % 2;
             }
             catch { return true; }
         }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // PATCH 7 – JobGiver_Work
+    // PATCH 7 – JobGiver_Work com intervalos configuráveis
     // ══════════════════════════════════════════════════════════════════════════
     [HarmonyPatch(typeof(JobGiver_Work), "TryIssueJobPackage")]
     internal static class Patch_JobGiver_Work
@@ -189,32 +195,55 @@ namespace RimT
             try
             {
                 if (pawn == null) return true;
+                var s   = RimTMod.Settings;
                 int now = Find.TickManager.TicksGame;
                 int id  = pawn.thingIDNumber;
 
-                if (pawn.jobs?.curJob != null)
-                { __result = ThinkResult.NoJob; return false; }
+                // Colonos e prisioneiros do jogador: SEMPRE vanilla, sem throttle
+                if (pawn.IsColonist || pawn.IsPrisonerOfColony || pawn.Faction == Faction.OfPlayer)
+                    return true;
 
+                // Animais
                 if (pawn.RaceProps?.Animal == true)
                 {
-                    if (_lastScan.TryGetValue(id, out int la) && now - la < 60)
+                    int aInterval = s?.AnimalJobInterval ?? 60;
+                    if (_lastScan.TryGetValue(id, out int la) && now - la < aInterval)
                     { __result = ThinkResult.NoJob; return false; }
-                    _lastScan[id] = now; return true;
+                    _lastScan[id] = now;
+                    return true;
                 }
 
-                if (!pawn.IsColonist && !pawn.IsPrisonerOfColony && pawn.Faction != Faction.OfPlayer)
+                // Inimigos hostis
+                if (pawn.HostileTo(Faction.OfPlayer))
                 {
-                    if (_lastScan.TryGetValue(id, out int ln) && now - ln < 30)
+                    // Raio de activação — inimigos longe ficam "dormentes"
+                    if (s?.EnableEnemyRadius == true)
+                    {
+                        int radius = s.EnemyActiveRadius;
+                        bool anyColonistNear = false;
+                        var colonists = pawn.Map?.mapPawns?.FreeColonistsSpawned;
+                        if (colonists != null)
+                            foreach (var col in colonists)
+                                if (col.Position.DistanceTo(pawn.Position) <= radius)
+                                { anyColonistNear = true; break; }
+
+                        if (!anyColonistNear)
+                        { __result = ThinkResult.NoJob; return false; }
+                    }
+
+                    int eInterval = s?.EnemyJobInterval ?? 10;
+                    if (_lastScan.TryGetValue(id, out int le) && now - le < eInterval)
                     { __result = ThinkResult.NoJob; return false; }
-                    _lastScan[id] = now; return true;
+                    _lastScan[id] = now;
+                    return true;
                 }
 
-                if (now % 3 != id % 3)
-                {
-                    if (_lastScan.TryGetValue(id, out int lc) && now - lc <= 3)
-                    { __result = ThinkResult.NoJob; return false; }
-                }
+                // Visitantes e neutrals (não hostis, não colonos)
+                int vInterval = s?.VisitorJobInterval ?? 15;
+                if (_lastScan.TryGetValue(id, out int lv) && now - lv < vInterval)
+                { __result = ThinkResult.NoJob; return false; }
                 _lastScan[id] = now;
+
                 if (_lastScan.Count > 2048) _lastScan.Clear();
                 return true;
             }
@@ -275,7 +304,7 @@ namespace RimT
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // PATCH 9 – Async PathFollower (non-colonos)
+    // PATCH 9 – Async PathFollower (só animais selvagens, nunca visitantes/inimigos)
     // ══════════════════════════════════════════════════════════════════════════
     [HarmonyPatch(typeof(Pawn_PathFollower), "StartPath")]
     internal static class Patch_PathFollower_StartPath
@@ -293,9 +322,10 @@ namespace RimT
             {
                 var pawn = _pawnField?.GetValue(__instance) as Pawn;
                 if (pawn == null) return true;
-                if (pawn.IsColonist || pawn.IsPrisonerOfColony) return true;
+
+                // Apenas animais selvagens — visitantes, inimigos, colonos: sempre vanilla
+                if (!pawn.RaceProps.Animal) return true;
                 if (pawn.Faction == Faction.OfPlayer) return true;
-                if (pawn.HostileTo(Faction.OfPlayer) && pawn.mindState?.enemyTarget != null) return true;
 
                 var map = pawn.Map;
                 if (map == null) return true;
@@ -307,8 +337,8 @@ namespace RimT
                 {
                     if (cached != null && cached != PawnPath.NotFound)
                     {
-                        var old = _pathField?.GetValue(__instance) as PawnPath;
-                        try { if (old != null && old != PawnPath.NotFound) old.ReleaseToPool(); } catch { }
+                        var old2 = _pathField?.GetValue(__instance) as PawnPath;
+                        try { if (old2 != null && old2 != PawnPath.NotFound) old2.ReleaseToPool(); } catch { }
                         _pathField?.SetValue(__instance, cached);
                         return false;
                     }
@@ -385,4 +415,79 @@ namespace RimT
             catch { return true; }
         }
     }
+    // MapInterface e PathFinderTick patches removidos — causavam problemas de UI
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PATCH – WorldPawns.WorldPawnsTick → 18% do WorldTick
+    // Trata pawns no mundo (caravanas, prisioneiros em trânsito).
+    // Throttle: cada 2 ticks — poupa ~50% sem afetar gameplay.
+    // ══════════════════════════════════════════════════════════════════════════
+    [HarmonyPatch]
+    internal static class Patch_WorldPawnsTick
+    {
+        [HarmonyTargetMethod]
+        internal static MethodBase TargetMethod()
+        {
+            var type = AccessTools.TypeByName("RimWorld.Planet.WorldPawns");
+            if (type == null) return null;
+            return MethodFinder.Find(type,
+                new[] { "WorldPawnsTick", "Tick" },
+                "WorldPawns");
+        }
+
+        [HarmonyPrefix]
+        internal static bool Prefix()
+        {
+            try { return Find.TickManager.TicksGame % 2 == 0; }
+            catch { return true; }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PATCH – WorldObjectsHolder.WorldObjectsHolderTick → 7% do WorldTick
+    // Trata objetos no mundo (sites, assentamentos inimigos).
+    // Throttle: cada 3 ticks — eventos do mundo acontecem em dias não segundos.
+    // ══════════════════════════════════════════════════════════════════════════
+    [HarmonyPatch]
+    internal static class Patch_WorldObjectsTick
+    {
+        [HarmonyTargetMethod]
+        internal static MethodBase TargetMethod()
+        {
+            var type = AccessTools.TypeByName("RimWorld.Planet.WorldObjectsHolder");
+            if (type == null) return null;
+            return MethodFinder.Find(type,
+                new[] { "WorldObjectsHolderTick", "Tick" },
+                "WorldObjectsHolder");
+        }
+
+        [HarmonyPrefix]
+        internal static bool Prefix()
+        {
+            try { return Find.TickManager.TicksGame % 3 == 0; }
+            catch { return true; }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PATCH – Map.MapPostTick → 11% do tick total
+    // Throttle sistemas pesados do post-tick para non-critical maps.
+    // ══════════════════════════════════════════════════════════════════════════
+    [HarmonyPatch(typeof(Map), "MapPostTick")]
+    internal static class Patch_MapPostTick
+    {
+        [HarmonyPrefix]
+        internal static bool Prefix(Map __instance)
+        {
+            try
+            {
+                // Mapa do jogador: sempre corre
+                if (__instance.IsPlayerHome) return true;
+                // Outros mapas (raids em outros locais, etc): cada 2 ticks
+                return Find.TickManager.TicksGame % 2 == 0;
+            }
+            catch { return true; }
+        }
+    }
+
 }

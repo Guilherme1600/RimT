@@ -38,6 +38,9 @@ namespace RimT
                 // Reachability memory cache — optional
                 if (Settings.EnableReachabilityCache)
                     SafePatch(typeof(Patch_Reachability_Cache));
+                SafePatch(typeof(Patch_WorldPawnsTick));
+                SafePatch(typeof(Patch_WorldObjectsTick));
+                SafePatch(typeof(Patch_MapPostTick));
 
                 // Async pathfinder — optional
                 if (Settings.EnableAsyncPath)
@@ -48,6 +51,7 @@ namespace RimT
                 {
                     SafePatch(typeof(Patch_ColonistBar_Dirty));
                     SafePatch(typeof(Patch_PawnRenderer));
+
                 }
 
                 Log.Message($"[RimT] Iniciado — {Settings.WorkerThreadCount} threads.");
@@ -105,6 +109,16 @@ namespace RimT
         public int ColonistBarInterval  = 5;   // frames entre rebuilds da barra
         public int PawnRenderInterval   = 3;   // frames entre renders de non-colonos fora de vista
 
+        // Job throttle intervals
+        public int VisitorJobInterval  = 1;   // 1 = vanilla (visitantes sempre reactivos)
+        public int EnemyJobInterval    = 1;   // 1 = vanilla (inimigos sempre reactivos)
+        public int AnimalJobInterval   = 30;  // ticks entre job scan de animais
+        public int ColonistJobInterval = 1;   // colonos: sempre vanilla
+
+        // Enemy activation radius — inimigos fora deste raio ficam "adormecidos"
+        public bool EnableEnemyRadius  = false;
+        public int  EnemyActiveRadius  = 60;  // células de raio
+
         public bool DebugLog = false;
 
         public void DoWindowContents(Rect inRect)
@@ -160,6 +174,34 @@ namespace RimT
             }
 
             list.GapLine();
+
+            // ── Job intervals ─────────────────────────────────────────────────
+            if (EnableJobThrottle)
+            {
+                list.Label("Intervalos de Job (ticks entre cada calculo de trabalho):");
+                list.Label($"  Colonos sem job: {ColonistJobInterval} ticks  (1=vanilla, 3=recomendado)");
+                ColonistJobInterval = (int)list.Slider(ColonistJobInterval, 1, 10);
+
+                list.Label($"  Visitantes: {VisitorJobInterval} ticks  (1=vanilla, 5-10=recomendado)");
+                VisitorJobInterval = (int)list.Slider(VisitorJobInterval, 1, 60);
+
+                list.Label($"  Inimigos: {EnemyJobInterval} ticks  (1=vanilla, 5-10=recomendado)");
+                EnemyJobInterval = (int)list.Slider(EnemyJobInterval, 1, 60);
+
+                list.Label($"  Animais selvagens: {AnimalJobInterval} ticks  (1=vanilla, 30-60=recomendado)");
+                AnimalJobInterval = (int)list.Slider(AnimalJobInterval, 1, 120);
+
+                list.GapLine();
+                list.CheckboxLabeled("Inimigos so atacam dentro de um raio (evita ataques surpresa de longe)",
+                    ref EnableEnemyRadius);
+                if (EnableEnemyRadius)
+                {
+                    list.Label($"  Raio de activacao de inimigos: {EnemyActiveRadius} celulas");
+                    EnemyActiveRadius = (int)list.Slider(EnemyActiveRadius, 10, 150);
+                }
+            }
+
+            list.GapLine();
             list.CheckboxLabeled("[Debug] Log verbose", ref DebugLog);
 
             list.Gap(8f);
@@ -178,6 +220,12 @@ namespace RimT
             Scribe_Values.Look(ref EnableRenderThrottle,   "enableRenderThrottle",   true);
             Scribe_Values.Look(ref ColonistBarInterval,    "colonistBarInterval",    5);
             Scribe_Values.Look(ref PawnRenderInterval,     "pawnRenderInterval",     3);
+            Scribe_Values.Look(ref VisitorJobInterval,     "visitorJobInterval",     15);
+            Scribe_Values.Look(ref EnemyJobInterval,       "enemyJobInterval",       10);
+            Scribe_Values.Look(ref AnimalJobInterval,      "animalJobInterval",      60);
+            Scribe_Values.Look(ref ColonistJobInterval,    "colonistJobInterval",    3);
+            Scribe_Values.Look(ref EnableEnemyRadius,      "enableEnemyRadius",      false);
+            Scribe_Values.Look(ref EnemyActiveRadius,      "enemyActiveRadius",      60);
             Scribe_Values.Look(ref DebugLog,               "debugLog",               false);
         }
     }
